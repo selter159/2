@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Theo Dõi Click - cicihere.com</title>
+  <link href="/output.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-4xl">
+    <div id="auth-container">
+      <h1 class="text-2xl font-bold mb-4 text-center">Đăng Nhập Dashboard</h1>
+      <div id="login-form" class="space-y-4 mb-4">
+        <input id="email" type="email" placeholder="Email" class="w-full p-2 border rounded">
+        <input id="password" type="password" placeholder="Mật khẩu" class="w-full p-2 border rounded">
+        <button id="login-btn" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Đăng Nhập</button>
+        <p id="auth-error" class="text-red-600 hidden"></p>
+      </div>
+      <button id="logout-btn" class="w-full bg-red-500 text-white p-2 rounded hover:bg-red-600 hidden">Đăng Xuất</button>
+    </div>
+    <div id="dashboard-container" class="hidden">
+      <h1 class="text-2xl font-bold mb-4 text-center">Dashboard Theo Dõi Click</h1>
+      <!-- Danh sách link -->
+      <h2 class="text-xl font-semibold mb-2">Danh Sách Link</h2>
+      <table class="w-full border-collapse border border-gray-300 mb-6">
+        <thead>
+          <tr class="bg-green-500 text-white">
+            <th class="border p-2">Shortcode</th>
+            <th class="border p-2">URL Đích</th>
+            <th class="border p-2">URL Sạch</th>
+            <th class="border p-2">Hành Động</th>
+          </tr>
+        </thead>
+        <tbody id="links-table"></tbody>
+      </table>
+      <!-- Thống kê -->
+      <h2 class="text-xl font-semibold mb-2">Thống Kê Click</h2>
+      <div id="stats" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4"></div>
+      <canvas id="clickChart" class="mt-4"></canvas>
+      <!-- Bảng chi tiết click -->
+      <h2 class="text-xl font-semibold mt-6 mb-2">Danh Sách Click</h2>
+      <table id="clicks-table" class="w-full border-collapse border border-gray-300">
+        <thead>
+          <tr class="bg-green-500 text-white">
+            <th class="border p-2">Shortcode</th>
+            <th class="border p-2">IP</th>
+            <th class="border p-2">User Agent</th>
+            <th class="border p-2">Bot</th>
+            <th class="border p-2">Thời Gian</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <button id="export-csv" class="mt-4 bg-green-500 text-white p-2 rounded hover:bg-green-600">Tải CSV</button>
+      <div id="error" class="mt-4 text-red-600 hidden"></div>
+    </div>
+    <div id="edit-form" class="hidden space-y-4">
+      <h2 class="text-xl font-bold mb-4 text-center">Chỉnh Sửa Link</h2>
+      <input id="edit-shortcode" type="text" placeholder="Shortcode" class="w-full p-2 border rounded" readonly>
+      <input id="edit-destination" type="url" placeholder="URL đích" class="w-full p-2 border rounded">
+      <input id="edit-clean" type="url" placeholder="URL sạch" class="w-full p-2 border rounded">
+      <div class="flex space-x-4">
+        <button id="save-btn" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Lưu</button>
+        <button id="cancel-btn" class="w-full bg-gray-500 text-white p-2 rounded hover:bg-gray-600">Hủy</button>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script>
+    const supabase = window.supabase.createClient(
+      'https://sptquxjgnjywspcngtdu.supabase.co',
+      'sb_publishable_2lqsEaA6yLAK3qcrbwVgiA_UF6979tV'
+    );
+
+    async function checkAuth() {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log('Session check:', { session, error });
+        if (error) {
+          console.error('Error checking session:', error.message);
+          document.getElementById('auth-error').textContent = error.message;
+          document.getElementById('auth-error').classList.remove('hidden');
+          return;
+        }
+        if (session) {
+          document.getElementById('auth-container').classList.add('hidden');
+          document.getElementById('dashboard-container').classList.remove('hidden');
+          document.getElementById('logout-btn').classList.remove('hidden');
+          loadDashboard();
+        } else {
+          document.getElementById('auth-container').classList.remove('hidden');
+          document.getElementById('dashboard-container').classList.add('hidden');
+          document.getElementById('logout-btn').classList.add('hidden');
+        }
+      } catch (err) {
+        console.error('Unexpected error in checkAuth:', err.message);
+        document.getElementById('auth-error').textContent = 'Lỗi không mong muốn khi kiểm tra phiên';
+        document.getElementById('auth-error').classList.remove('hidden');
+      }
+    }
+
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const errorEl = document.getElementById('auth-error');
+      try {
+        console.log('Attempting login with:', { email });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        console.log('Login response:', { data, error });
+        if (error) {
+          errorEl.textContent = error.message;
+          errorEl.classList.remove('hidden');
+        } else {
+          errorEl.classList.add('hidden');
+          checkAuth();
+        }
+      } catch (err) {
+        console.error('Unexpected error in login:', err.message);
+        errorEl.textContent = 'Lỗi không mong muốn khi đăng nhập';
+        errorEl.classList.remove('hidden');
+      }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      try {
+        const { error } = await supabase.auth.signOut();
+        console.log('Logout response:', { error });
+        if (error) {
+          console.error('Error logging out:', error.message);
+        }
+        checkAuth();
+      } catch (err) {
+        console.error('Unexpected error in logout:', err.message);
+      }
+    });
+
+    async function loadDashboard() {
+      try {
+        // Load links
+        const { data: linksData, error: linksError } = await supabase
+          .from('links')
+          .select('id, shortcode, destination_url, clean_url');
+        console.log('Links data:', { linksData, linksError });
+        if (linksError) {
+          console.error('Error loading links:', linksError.message);
+          document.getElementById('error').textContent = `Lỗi: ${linksError.message}`;
+          document.getElementById('error').classList.remove('hidden');
+        } else {
+          const linksTbody = document.querySelector('#links-table');
+          linksTbody.innerHTML = '';
+          linksData.forEach(link => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td class="border p-2">${link.shortcode}</td>
+              <td class="border p-2">${link.destination_url}</td>
+              <td class="border p-2">${link.clean_url}</td>
+              <td class="border p-2">
+                <button class="edit-btn bg-yellow-500 text-white p-1 rounded hover:bg-yellow-600" data-id="${link.id}" data-shortcode="${link.shortcode}" data-destination="${link.destination_url}" data-clean="${link.clean_url}">Chỉnh Sửa</button>
+                <button class="delete-btn bg-red-500 text-white p-1 rounded hover:bg-red-600" data-id="${link.id}">Xóa</button>
+              </td>
+            `;
+            linksTbody.appendChild(row);
+          });
+
+          document.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const id = btn.dataset.id;
+              const shortcode = btn.dataset.shortcode;
+              const destination = btn.dataset.destination;
+              const clean = btn.dataset.clean;
+              document.getElementById('edit-shortcode').value = shortcode;
+              document.getElementById('edit-destination').value = destination;
+              document.getElementById('edit-clean').value = clean;
+              document.getElementById('edit-form').dataset.id = id;
+              document.getElementById('dashboard-container').classList.add('hidden');
+              document.getElementById('edit-form').classList.remove('hidden');
+            });
+          });
+
+          document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              if (confirm('Bạn có chắc muốn xóa link này?')) {
+                const id = btn.dataset.id;
+                const { error } = await supabase.from('links').delete().eq('id', id);
+                if (error) {
+                  console.error('Error deleting link:', error.message);
+                  document.getElementById('error').textContent = `Lỗi: ${error.message}`;
+                  document.getElementById('error').classList.remove('hidden');
+                } else {
+                  loadDashboard();
+                }
+              }
+            });
+          });
+        }
+
+        // Load clicks
+        const { data, error } = await supabase
+          .from('clicks')
+          .select('*, links(shortcode)')
+          .order('timestamp', { ascending: false });
+        console.log('Clicks data:', { data, error });
+        if (error) {
+          console.error('Error loading clicks:', error.message);
+          document.getElementById('error').textContent = `Lỗi: ${error.message}`;
+          document.getElementById('error').classList.remove('hidden');
+          return;
+        }
+
+        // Hiển thị bảng chi tiết
+        const tableBody = document.querySelector('#clicks-table tbody');
+        tableBody.innerHTML = '';
+        data.forEach(click => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td class="border p-2">${click.links.shortcode}</td>
+            <td class="border p-2">${click.ip}</td>
+            <td class="border p-2">${click.user_agent}</td>
+            <td class="border p-2">${click.is_bot ? 'Có' : 'Không'}</td>
+            <td class="border p-2">${new Date(click.timestamp).toLocaleString('vi-VN')}</td>
+          `;
+          tableBody.appendChild(row);
+        });
+
+        // Thống kê
+        const statsDiv = document.getElementById('stats');
+        const shortcodeStats = {};
+        data.forEach(click => {
+          const shortcode = click.links.shortcode;
+          if (!shortcodeStats[shortcode]) {
+            shortcodeStats[shortcode] = { total: 0, bot: 0, human: 0 };
+          }
+          shortcodeStats[shortcode].total += 1;
+          if (click.is_bot) {
+            shortcodeStats[shortcode].bot += 1;
+          } else {
+            shortcodeStats[shortcode].human += 1;
+          }
+        });
+
+        statsDiv.innerHTML = '';
+        Object.entries(shortcodeStats).forEach(([shortcode, stats]) => {
+          const statCard = document.createElement('div');
+          statCard.className = 'bg-gray-100 p-4 rounded-lg';
+          statCard.innerHTML = `
+            <h3 class="font-bold">${shortcode}</h3>
+            <p>Tổng click: ${stats.total}</p>
+            <p>Bot: ${stats.bot}</p>
+            <p>Người: ${stats.human}</p>
+          `;
+          statsDiv.appendChild(statCard);
+        });
+
+        // Biểu đồ Chart.js
+        const ctx = document.getElementById('clickChart').getContext('2d');
+        new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: Object.keys(shortcodeStats),
+            datasets: [
+              {
+                label: 'Click từ Bot',
+                data: Object.values(shortcodeStats).map(stat => stat.bot),
+                backgroundColor: 'rgba(255, 99, 132, 0.5)',
+              },
+              {
+                label: 'Click từ Người',
+                data: Object.values(shortcodeStats).map(stat => stat.human),
+                backgroundColor: 'rgba(54, 162, 235, 0.5)',
+              },
+            ],
+          },
+          options: {
+            scales: { y: { beginAtZero: true } },
+          },
+        });
+
+        // Export CSV
+        document.getElementById('export-csv').addEventListener('click', () => {
+          const csvRows = ['Shortcode,IP,User Agent,Bot,Thời Gian'];
+          data.forEach(click => {
+            const row = [
+              click.links.shortcode,
+              click.ip,
+              `"${click.user_agent.replace(/"/g, '""')}"`,
+              click.is_bot ? 'Có' : 'Không',
+              new Date(click.timestamp).toLocaleString('vi-VN'),
+            ];
+            csvRows.push(row.join(','));
+          });
+          const csvContent = csvRows.join('\n');
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'clicks_export.csv';
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+      } catch (err) {
+        console.error('Unexpected error in loadDashboard:', err.message);
+        document.getElementById('error').textContent = `Lỗi: ${err.message}`;
+        document.getElementById('error').classList.remove('hidden');
+      }
+    }
+
+    document.getElementById('save-btn').addEventListener('click', async () => {
+      const id = document.getElementById('edit-form').dataset.id;
+      const destination = document.getElementById('edit-destination').value;
+      const clean = document.getElementById('edit-clean').value;
+      try {
+        const { error } = await supabase
+          .from('links')
+          .update({ destination_url: destination, clean_url: clean })
+          .eq('id', id);
+        console.log('Update link response:', { error });
+        if (error) {
+          console.error('Error updating link:', error.message);
+          document.getElementById('error').textContent = `Lỗi: ${error.message}`;
+          document.getElementById('error').classList.remove('hidden');
+        } else {
+          document.getElementById('dashboard-container').classList.remove('hidden');
+          document.getElementById('edit-form').classList.add('hidden');
+          loadDashboard();
+        }
+      } catch (err) {
+        console.error('Unexpected error in save link:', err.message);
+        document.getElementById('error').textContent = `Lỗi: ${err.message}`;
+        document.getElementById('error').classList.remove('hidden');
+      }
+    });
+
+    document.getElementById('cancel-btn').addEventListener('click', () => {
+      document.getElementById('dashboard-container').classList.remove('hidden');
+      document.getElementById('edit-form').classList.add('hidden');
+    });
+
+    checkAuth();
+  </script>
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rút Gọn & Bọc Link - cicihere.com</title>
+  <link href="/output.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+    <div id="auth-container">
+      <h1 class="text-2xl font-bold mb-4 text-center">Đăng Nhập</h1>
+      <div id="login-form" class="space-y-4 mb-4">
+        <input id="email" type="email" placeholder="Email" class="w-full p-2 border rounded">
+        <input id="password" type="password" placeholder="Mật khẩu" class="w-full p-2 border rounded">
+        <button id="login-btn" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Đăng Nhập</button>
+        <p id="auth-error" class="text-red-600 hidden"></p>
+      </div>
+      <button id="logout-btn" class="w-full bg-red-500 text-white p-2 rounded hover:bg-red-600 hidden">Đăng Xuất</button>
+    </div>
+    <div id="main-container" class="hidden">
+      <h1 class="text-2xl font-bold mb-4 text-center">Tạo Link Bọc</h1>
+      <form id="cloaking-form" class="space-y-4">
+        <input id="destination-url" type="url" placeholder="URL đích (link thật)" class="w-full p-2 border rounded" required>
+        <input id="clean-url" type="url" placeholder="URL sạch (cho bot)" class="w-full p-2 border rounded" required>
+        <input id="custom-code" type="text" placeholder="Shortcode tùy chỉnh (tùy chọn)" class="w-full p-2 border rounded">
+        <button type="submit" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Tạo Link</button>
+      </form>
+      <div id="result" class="mt-4 hidden">
+        <p class="text-green-600">Link bọc: <a id="short-url" href="#" target="_blank" class="underline"></a></p>
+      </div>
+      <div id="error" class="mt-4 text-red-600 hidden"></div>
+      <a href="/dashboard.html" class="mt-4 block text-blue-500 hover:underline">Xem Dashboard Theo Dõi Click</a>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script>
+    const supabase = window.supabase.createClient(
+      'https://sptquxjgnjywspcngtdu.supabase.co',
+      'sb_publishable_2lqsEaA6yLAK3qcrbwVgiA_UF6979tV',
+      { global: { headers: { 'Accept': 'application/json' } } }
+    );
+
+    async function checkAuth() {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log('Session check:', { session, error });
+        if (error) {
+          console.error('Error checking session:', error.message);
+          document.getElementById('auth-error').textContent = error.message;
+          document.getElementById('auth-error').classList.remove('hidden');
+          return;
+        }
+        if (session) {
+          document.getElementById('auth-container').classList.add('hidden');
+          document.getElementById('main-container').classList.remove('hidden');
+          document.getElementById('logout-btn').classList.remove('hidden');
+        } else {
+          document.getElementById('auth-container').classList.remove('hidden');
+          document.getElementById('main-container').classList.add('hidden');
+          document.getElementById('logout-btn').classList.add('hidden');
+        }
+      } catch (err) {
+        console.error('Unexpected error in checkAuth:', err.message);
+        document.getElementById('auth-error').textContent = 'Lỗi không mong muốn khi kiểm tra phiên';
+        document.getElementById('auth-error').classList.remove('hidden');
+      }
+    }
+
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const errorEl = document.getElementById('auth-error');
+      try {
+        console.log('Attempting login with:', { email });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        console.log('Login response:', { data, error });
+        if (error) {
+          errorEl.textContent = error.message;
+          errorEl.classList.remove('hidden');
+        } else {
+          errorEl.classList.add('hidden');
+          checkAuth();
+        }
+      } catch (err) {
+        console.error('Unexpected error in login:', err.message);
+        errorEl.textContent = 'Lỗi không mong muốn khi đăng nhập';
+        errorEl.classList.remove('hidden');
+      }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      try {
+        const { error } = await supabase.auth.signOut();
+        console.log('Logout response:', { error });
+        if (error) {
+          console.error('Error logging out:', error.message);
+        }
+        checkAuth();
+      } catch (err) {
+        console.error('Unexpected error in logout:', err.message);
+      }
+    });
+
+    document.getElementById('cloaking-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const destinationUrl = document.getElementById('destination-url').value;
+      const cleanUrl = document.getElementById('clean-url').value;
+      let customCode = document.getElementById('custom-code').value || Math.random().toString(36).substring(2, 8);
+      const resultDiv = document.getElementById('result');
+      const shortUrlLink = document.getElementById('short-url');
+      const errorDiv = document.getElementById('error');
+
+      console.log('Submitting:', { destinationUrl, cleanUrl, customCode });
+
+      try {
+        const { data: existingLink, error: checkError } = await supabase
+          .from('links')
+          .select('shortcode')
+          .eq('shortcode', customCode)
+          .single();
+
+        if (existingLink) {
+          throw new Error('Shortcode đã tồn tại, vui lòng chọn shortcode khác.');
+        }
+        if (checkError && checkError.code !== 'PGRST116') {
+          throw checkError;
+        }
+
+        const { data, error } = await supabase
+          .from('links')
+          .insert([{ shortcode: customCode, destination_url: destinationUrl, clean_url: cleanUrl }])
+          .select();
+        console.log('Supabase response:', { data, error });
+
+        if (error) throw error;
+
+        const shortUrl = `https://cicihere.com/${customCode}`;
+        shortUrlLink.href = shortUrl;
+        shortUrlLink.textContent = shortUrl;
+        resultDiv.classList.remove('hidden');
+        errorDiv.classList.add('hidden');
+        document.getElementById('cloaking-form').reset();
+      } catch (error) {
+        console.error('Error:', error.message);
+        errorDiv.textContent = `Lỗi: ${error.message}`;
+        errorDiv.classList.remove('hidden');
+        resultDiv.classList.add('hidden');
+      }
+    });
+
+    checkAuth();
+  </script>
+</body>
+</html>
